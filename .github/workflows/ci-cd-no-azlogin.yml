@@ -31,7 +31,9 @@ jobs:
 
       - name: Prepare kubeconfig
         run: |
-          echo "${{ secrets.KUBECONFIG_DATA }}" > $HOME/.kube/config
+          set -e
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
       - name: Ensure namespace exists
