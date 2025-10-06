@@ -1,0 +1,50 @@
+name: CI/CD to ACR & AKS
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
+  AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: az acr login --name "${{ env.ACR_NAME }}"
+
+      - name: Build and push image to ACR
+        run: |
+          TAG=${GITHUB_SHA::8}
+          IMAGE=${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$TAG
+          docker build -t $IMAGE .
+          docker push $IMAGE
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Set AKS credentials
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+          resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+
+      - name: Deploy to AKS
+        run: |
+          TAG=${GITHUB_SHA::8}
+          IMAGE=${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$TAG
+          sed -i "s|REPLACE_WITH_IMAGE|${IMAGE}|g" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml -n guestbook || kubectl create -f k8s/deployment.yaml -n guestbook
+          kubectl apply -f k8s/service.yaml -n guestbook || kubectl create -f k8s/service.yaml -n guestbook
